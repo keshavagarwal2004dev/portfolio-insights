@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { StatsOverview } from "@/components/dashboard/StatsOverview";
@@ -11,15 +11,44 @@ import { MarketIntelligence } from "@/components/market/MarketIntelligence";
 import { ExpenseTracker } from "@/components/expenses/ExpenseTracker";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import { Loader2 } from "lucide-react";
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const navigate = useNavigate();
+  const { user, loading, signOut } = useAuth();
 
-  const handleLogout = () => {
-    toast.success("Logged out successfully");
-    navigate("/");
+  // Redirect if not logged in
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate("/auth");
+    }
+  }, [user, loading, navigate]);
+
+  const handleLogout = async () => {
+    const { error } = await signOut();
+    if (error) {
+      toast.error("Error signing out");
+    } else {
+      toast.success("Logged out successfully");
+      navigate("/");
+    }
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated
+  if (!user) {
+    return null;
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -29,7 +58,7 @@ export default function Dashboard() {
             <div>
               <h1 className="text-3xl font-bold mb-2">Portfolio Dashboard</h1>
               <p className="text-muted-foreground">
-                Welcome back! Here's an overview of your financial portfolio.
+                Welcome back{user.email ? `, ${user.email}` : ""}! Here's an overview of your financial portfolio.
               </p>
             </div>
             <StatsOverview />
