@@ -12,16 +12,13 @@ import {
   Newspaper,
   BarChart3,
   Clock,
+  Building2,
+  Landmark,
+  BadgeDollarSign,
+  Loader2,
 } from "lucide-react";
-
-interface NewsItem {
-  id: string;
-  title: string;
-  source: string;
-  time: string;
-  sentiment: "positive" | "negative" | "neutral";
-  url: string;
-}
+import { searchMarket, SearchResult, SearchType } from "@/lib/api/market";
+import { useToast } from "@/hooks/use-toast";
 
 interface CompanyOutlook {
   symbol: string;
@@ -32,41 +29,6 @@ interface CompanyOutlook {
   recommendation: "buy" | "hold" | "sell";
   nextYearTarget: number;
 }
-
-const mockNews: NewsItem[] = [
-  {
-    id: "1",
-    title: "Apple announces record Q4 earnings, beats analyst expectations",
-    source: "Bloomberg",
-    time: "2 hours ago",
-    sentiment: "positive",
-    url: "#",
-  },
-  {
-    id: "2",
-    title: "Federal Reserve signals potential rate cuts in 2025",
-    source: "Reuters",
-    time: "4 hours ago",
-    sentiment: "positive",
-    url: "#",
-  },
-  {
-    id: "3",
-    title: "Tech sector faces regulatory challenges in EU markets",
-    source: "Financial Times",
-    time: "6 hours ago",
-    sentiment: "negative",
-    url: "#",
-  },
-  {
-    id: "4",
-    title: "Microsoft expands AI partnerships with enterprise clients",
-    source: "CNBC",
-    time: "8 hours ago",
-    sentiment: "positive",
-    url: "#",
-  },
-];
 
 const mockOutlook: CompanyOutlook[] = [
   {
@@ -100,21 +62,82 @@ const mockOutlook: CompanyOutlook[] = [
 
 export function MarketIntelligence() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [searchType, setSearchType] = useState<SearchType>("company");
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
+  const { toast } = useToast();
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 2000);
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      toast({
+        title: "Enter a search term",
+        description: "Please enter a company, bank, or bond to search for.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSearching(true);
+    setHasSearched(true);
+
+    try {
+      const result = await searchMarket(searchQuery.trim(), searchType);
+
+      if (result.success) {
+        setSearchResults(result.news);
+        if (result.news.length === 0) {
+          toast({
+            title: "No results found",
+            description: `No market news found for "${searchQuery}". Try a different search term.`,
+          });
+        } else {
+          toast({
+            title: "Search complete",
+            description: `Found ${result.news.length} results for "${searchQuery}".`,
+          });
+        }
+      } else {
+        toast({
+          title: "Search failed",
+          description: result.error || "Failed to fetch market data. Please try again.",
+          variant: "destructive",
+        });
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      });
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
   };
 
-  const getSentimentColor = (sentiment: NewsItem["sentiment"]) => {
-    switch (sentiment) {
-      case "positive":
-        return "text-gain";
-      case "negative":
-        return "text-loss";
-      default:
-        return "text-muted-foreground";
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSearch();
+    }
+  };
+
+  const getTimeAgo = (dateStr?: string) => {
+    if (!dateStr) return "Recently";
+    try {
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffHours / 24);
+
+      if (diffDays > 0) return `${diffDays}d ago`;
+      if (diffHours > 0) return `${diffHours}h ago`;
+      return "Recently";
+    } catch {
+      return "Recently";
     }
   };
 
@@ -129,36 +152,70 @@ export function MarketIntelligence() {
     }
   };
 
+  const searchTypeOptions: { type: SearchType; label: string; icon: React.ReactNode }[] = [
+    { type: "company", label: "Company", icon: <Building2 className="w-4 h-4" /> },
+    { type: "bank", label: "Investment Bank", icon: <Landmark className="w-4 h-4" /> },
+    { type: "bond", label: "Bond", icon: <BadgeDollarSign className="w-4 h-4" /> },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Search & Refresh */}
+      {/* Search & Filters */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-primary" />
-              Market Intelligence
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-            >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-primary" />
+            Market Intelligence
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search companies, sectors, or market trends..."
-              className="pl-10"
-            />
+        <CardContent className="space-y-4">
+          {/* Search Type Selector */}
+          <div className="flex gap-2">
+            {searchTypeOptions.map((option) => (
+              <Button
+                key={option.type}
+                variant={searchType === option.type ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSearchType(option.type)}
+                className="flex items-center gap-2"
+              >
+                {option.icon}
+                {option.label}
+              </Button>
+            ))}
+          </div>
+
+          {/* Search Input */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  searchType === "company"
+                    ? "Search for a company (e.g., Apple, Tesla, Microsoft)..."
+                    : searchType === "bank"
+                    ? "Search for an investment bank (e.g., Goldman Sachs, Morgan Stanley)..."
+                    : "Search for a bond or fixed income product..."
+                }
+                className="pl-10"
+              />
+            </div>
+            <Button onClick={handleSearch} disabled={isSearching}>
+              {isSearching ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Searching...
+                </>
+              ) : (
+                <>
+                  <Search className="w-4 h-4 mr-2" />
+                  Search
+                </>
+              )}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -177,44 +234,63 @@ export function MarketIntelligence() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* News Feed */}
+        {/* Live Search Results */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Newspaper className="w-5 h-5 text-primary" />
-              Latest News
+              {hasSearched ? `Results for "${searchQuery}"` : "Latest News"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {mockNews.map((news) => (
-              <div
-                key={news.id}
-                className="p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors cursor-pointer group"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <p className="font-medium text-sm group-hover:text-primary transition-colors">
-                      {news.title}
-                    </p>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                      <span>{news.source}</span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {news.time}
-                      </span>
-                      <span>•</span>
-                      <span className={getSentimentColor(news.sentiment)}>
-                        {news.sentiment === "positive" && <TrendingUp className="w-3 h-3 inline" />}
-                        {news.sentiment === "negative" && <TrendingDown className="w-3 h-3 inline" />}
-                        {" "}{news.sentiment}
-                      </span>
-                    </div>
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
+            {isSearching ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Loader2 className="w-8 h-8 animate-spin mb-4" />
+                <p>Searching the web for market intelligence...</p>
               </div>
-            ))}
+            ) : searchResults.length > 0 ? (
+              searchResults.map((news, idx) => (
+                <a
+                  key={idx}
+                  href={news.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors group"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <p className="font-medium text-sm group-hover:text-primary transition-colors line-clamp-2">
+                        {news.title}
+                      </p>
+                      {news.description && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                          {news.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                        <span className="font-medium">{news.source}</span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {getTimeAgo(news.publishedDate)}
+                        </span>
+                      </div>
+                    </div>
+                    <ExternalLink className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                  </div>
+                </a>
+              ))
+            ) : hasSearched ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Search className="w-8 h-8 mb-4 opacity-50" />
+                <p>No results found. Try a different search term.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Search className="w-8 h-8 mb-4 opacity-50" />
+                <p>Search for a company, bank, or bond to see live market news.</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
